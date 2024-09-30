@@ -1,6 +1,6 @@
 
 # About the lab<br>
-This lab showcases fine-grained access control made possible by [BigLake](https://cloud.google.com/bigquery/docs/biglake-intro) with a minimum viable example of Icecream sales forecasting on a Spark notebook hosted on a personal auth [Cloud Dataproc](https://cloud.google.com/dataproc) cluster. 
+This lab showcases fine-grained access control made possible by [BigLake](https://cloud.google.com/bigquery/docs/biglake-intro) with a minimum viable example of Icecream sales. 
 
 ### Use Case
 Sales forecasting with Prophet
@@ -8,9 +8,8 @@ Sales forecasting with Prophet
 ### Goals
 1. Just enough knowledge of creating and using BigLake tables on files in Cloud Storage
 2. Just enough knowledge of Row and Column Level Security setup with BigLake
-3. Introduction to notebooks on Dataproc in case you are new to Dataproc
-4. Accessing BigLake through PySpark with the BigQuery Spark connector from Google Cloud
-5. Just enough Terraform for automating provisioning, that can be repurposed for your workloads
+3. Accessing BigQuery via SQL Commands
+4. Just enough Terraform for automating provisioning, that can be repurposed for your workloads
 
 ### Lab Flow
 ![flow](./images/flow.png) 
@@ -28,25 +27,7 @@ Three users are created as part of the lab, with finegrained access implemented-
 2. aus_user@ - RLS & CLS: has access to all columns of data with Country in Australia
 3. mkt_user@ - CLS: has access to all columns but Discount and Net_Revenue, but to data from all countries
 
-Through a PySpark notebook that is run for each of the three user personas, we will learn how access varies based on finegrained permissions.
-
-### Solution Architecture
-This lab features Dataproc Personal Auth Clusters as the Spark infrastructure, and JupyterLab on Dataproc as the notebook infrastructure.
-
-![architecture](./images/architecture.png) 
-
-
-**About Cloud Dataproc personal auth clusters:**
-<br>
-- Dataproc Personal Cluster Authentication is intended for interactive jobs run by an individual (human) user. Long-running jobs and operations should configure and use an appropriate service account identity.
-- When you create a cluster with Personal Cluster Authentication enabled, the cluster will only be usable by a single identity. Other users will not be able to run jobs on the cluster or access Component Gateway endpoints on the cluster.
-- Clusters with Personal Cluster Authentication enabled automatically enable and configure Kerberos on the cluster for secure intra-cluster communication. However, all Kerberos identities on the cluster will interact with Google Cloud resources as the same user. (identity propagation, fine grained auditability)
-
-<br>
-So effectively, the architecture is as depicted below-
-
-![architecture-2](./images/architecture-2.png) 
-
+TBD - SQL Queries
 
 ### Column Level Security 
 The section covers Column Level Security setup.<br>
@@ -106,14 +87,12 @@ The section covers Row Level Security setup.<br>
 
 ### Key Products
 1. Cloud IAM - Users, groups, group memberships, roles
-2. Cloud Storage - raw data & notebook, Dataproc temp bucket and staging bucket
+2. Cloud Storage - for CSV file
 3. Dataplex Data Catalog - policy tag taxonomy, policy tag
-4. Biglake - finegrained row level and column level security on CSV in Cloud Storage
-5. Cloud Dataproc - Spark on JupyterLab for forecasting icecream sales
+4. BigQuery - finegrained row level and column level security Bigquery Native Table
 
 ### Technology & Libraries
 1. Data preprocessing at scale: Spark, specifically PySpark
-2. Forecasting: Prophet with Python
 
 ### Duration to run through the lab
 ~ 90 minutes
@@ -138,7 +117,7 @@ If you have any questions or if you found any problems with this repository, ple
 <hr>
 
 
-# BigLake Finegrained Permissions Lab
+# BigQuery Finegrained Permissions Lab
 
 ## 1. Prerequisites 
 
@@ -198,14 +177,13 @@ For more information see these instructions --> [Add Profile Instructions](https
 ### 2.1. Products/services used in the lab
 The following services and resources will be created via Terraform scripts:
 
-1. VPC, Subnetwork and NAT rules
-2. IAM groups for USA and Australia
-3. IAM permissions for user principals and Google Managed default service accounts
-4. GCS buckets, for each user principal and for Dataproc temp bucket
-5. Dataplex Policy for Column level Access
-6. BigQuery Dataset, Table and Row Level Policies
-7. Dataproc 'Personal auth' (kerberized) Clusters: a cluster each for USA, Australia and Marketing Users
-8. Pre-created Jupyter Notebooks are uploaded to the GCS 
+1. IAM groups for USA and Australia
+  - alternately, you can use individual user id's.
+2. IAM permissions for user principals and Google Managed default service accounts
+3. GCS bucket for CSV Data
+4. Dataplex Policy for Column level Access
+5. BigQuery Dataset, Table and Row Level Policies
+6. TBD - BQ SQL Queries 
 
 ### 2.2. Tooling
 
@@ -215,6 +193,253 @@ The following services and resources will be created via Terraform scripts:
 <hr>
 
 ## 3. Provision the GCP environment 
+
+
+### 3.a via the console
+
+#### 3.1 Enable API's
+
+    Go to the Google Cloud Console: https://console.cloud.google.com/apis   <BR>
+    <BR>
+    Search for the Google Cloud Data Catalog API with the string below: <BR>
+      datacatalog.googleapis.com
+    <BR>
+    Click on 'Google Cloud Data Catalog API' and enable it if needed. <BR>
+    <BR>
+
+#### 3.2 Get and Record the Project Number
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/home/dashboard
+    <BR>
+
+    Record the Project Number for your current project (shown in image below)<BR>
+
+![PICT22](./images/get_projectnumber.png) 
+
+#### 3.3 Create BigQuery Policy Tag
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery/policy-tags
+    <BR>
+    #1 Click on 'Create Taxonomy' - located at top middle of screen<BR>
+    #2 Enter the following values:<BR>
+    - Taxonomy Name: Business-Critical-<project number from above><BR>
+    - Policy Tags/Tag Name: Financial Data<BR>
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery/policy-tags
+    <BR>
+    Click on the Taxonomy you just created and click on the "Enforce Access Control" slider to enable column level security.
+
+#### 3.4 Create Cloud Storage Bucket
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/storage
+    <BR>
+    Click on the "Create" Button and create a bucket with the following name:
+    -gcs-bucket-<project-number-from-above><BR>
+    <BR>
+
+#### 3.5 Download CSV Sample File
+
+    <BR>
+    Click on the IceCreamSales.csv file using this [link](https://github.com/j-f-oleary-bigdata/biglake-finegrained-lab/blob/main/demo/resources/IceCreamSales.csv) 
+    <BR>
+    Click on the the three elipsis on the right as shown below and download CSV 
+![PICT23](./images/download.png) 
+
+#### 3.6 Upload CSV File to Cloud Storage Bucket
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/storage<BR>
+    <BR>
+    Click on the bucket you created earlier (e.g. gcs-bucket-<your-project-number-from-above>)<BR>
+    <BR>
+    Click on the Upload Button and select 'Upload Files' to upload IceCreamSales.csv to the bucket
+
+#### 3.6 Create the BigQuery Dataset
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on your project to expand the list<BR>
+    <BR>
+    Click on the vertical elipsis next to your project name <BR>
+    <BR>
+    Select 'Create Dataset'<BR>
+    Enter the name in the Dataset ID field: icecream_dataset<BR>
+    Leave everything else as is and hit the 'Create Dataset' button<BR>
+    You should now see a new dataset called 'icecream_dataset' in the BigQuery UI, similar to below: <BR>
+    <BR>
+![PICT23](./images/bq_1.png) 
+<BR>
+
+#### 3.6 Create the BigQuery Table
+
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on the vertical elipsis next to the icecream_dataset<BR>
+    <BR>
+    Select 'Create Dataset'<BR>
+    <BR>Enter the following Information:<BR>
+    - For Source Select: Google Cloud Storage
+    - Enter the path of your csv file on Cloud Storage
+    - For File Format: Select CSV
+    - For Table Enter: IceCreamSales.csv
+    - For schema, move the slider to Edit as Text and enter the text below:<BR>
+    ```
+    [
+            {
+                "name": "country",
+                "type": "STRING"
+            },
+            {
+                "name": "month",
+                "type": "DATE"
+                },
+            {
+                "name": "Gross_Revenue",
+                "type": "FLOAT"
+            },
+            {
+                "name": "Discount",
+                "type": "FLOAT"
+            },
+            {
+                "name": "Net_Revenue",
+                "type": "FLOAT"
+            }
+    ]
+
+    ``` 
+    <BR>
+    Under Advanced Options for "Header Rows to Skip" Enter the value: 1
+    <BR>
+    Leave Everything else as the default and click 'Create Table' as shown below
+    <BR>
+![PICT23](./images/bq_2.png) 
+  <BR>
+  You should now see a new dataset Table 'IceCreamSales' in the BigQuery UI, similar to below: <BR>
+![PICT23](./images/bq_3.png) 
+<BR>
+
+#### 3.6 Add Policy Tags to the BigQuery Table for Column Level Security
+
+  <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on IceCreamSales Table and go to the 'SCHEMA' tab<BR>
+    <BR>
+    Click on 'Edit Schema'<BR>
+    <BR>
+    Select 'Gross_Revenue' and 'Net_Revenue' Columns<BR>
+    <BR>
+    Click on the 'ADD POLICY TAG' text as shown below <BR>
+<BR>    
+
+![PICT24](./images/bq_4.png) 
+    <BR>
+    Select 'Financial Data' next to the Taxonomy for your project and hit the SELECT button<BR>
+    <BR>
+
+#### 3.7 Add Row Level Security to the BigQuery Table for Row Level Security
+    <BR>
+    Go to the Google Cloud Console: https://console.cloud.google.com/ <BR>
+    - Open the project picker: It's in the top bar, next to "Google Cloud Platform".<BR>
+    -Your organization name should be at the top of the list. It might be displayed with your domain name.<BR>
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on IceCreamSales Table and go to the 'SCHEMA' tab<BR>
+    <BR>
+    Click on 'Query'<BR>
+    <BR>
+    Enter the Text Below:
+    ```
+       CREATE ROW ACCESS POLICY
+        Australia_filter
+        ON
+        icecream_dataset.IceCreamSales
+        GRANT TO
+        ("group:australia-sales@<your-org-name-from-above>")
+        FILTER USING
+        (Country="Australia");
+
+      CREATE ROW ACCESS POLICY
+        US_filter
+        ON
+        icecream_dataset.IceCreamSales
+        GRANT TO
+        ("group:us-sales@<your-org-name-from-above>")
+        FILTER USING
+        (Country="United States");
+      ```
+    <BR>
+    <BR>
+    Click on IceCreamSales Table and go to the 'SCHEMA' tab<BR>
+    <BR>
+    Click on 'VIEW ROW ACCESS POLICIES'<BR>
+    <BR>
+    You should see the two policies you added above.
+
+#### 3.8 Set User Permissions
+    Go the Google Cloud Console: https://console.cloud.google.com/iam-admin<BR>
+    Click on Grant Access<BR>
+    Make the USA, Australia, and Marketing User Project Editors <BR>
+
+
+#### 3.9 Check Row Level Security
+    <BR>
+    Log into the google cloud console as a user that is part of the us-sales group
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on IceCreamSales Table and go to the 'SCHEMA' tab<BR>
+    <BR>
+    Click on 'Query'<BR>
+    <BR>
+    Enter the Text Below:<BR>
+    ```
+    select 
+      country, count(country) as count 
+    from icecream_dataset.IceCreamSales
+    GROUP BY country;
+    ```
+    <BR>
+    Results Should look similar to the following:<BR>
+    ```
+    country       count        
+    United States 1667
+    ```
+    <BR>
+
+#### 3.9 Check Column Level Security
+    <BR>
+    Log into the google cloud console as a the marketing user
+    <BR>
+    Go the Google Cloud Console: https://console.cloud.google.com/bigquery<BR>
+    <BR>
+    Click on IceCreamSales Table and go to the 'SCHEMA' tab<BR>
+    <BR>
+    Click on 'Query'<BR>
+    <BR>
+    Enter the Text Below:<BR>
+    ```
+    select 
+      country, count(country) as count 
+    from icecream_dataset.IceCreamSales
+    GROUP BY country;
+    ```
+    <BR>
+    Results Should look similar to the following:<BR>
+    ```
+    country       count        
+    United States 1667
+    ```
+    <BR>
+
+### 3.b via Terraform
 
 This section covers creating the environment via Terraform from Cloud Shell. 
 1. Launch cloud shell
@@ -229,7 +454,7 @@ Instructions for launching and using cloud shell are available [here](https://cl
 
 ```
 cd ~
-git clone https://github.com/j-f-oleary-bigdata/biglake-finegrained-lab
+git clone -b bigquery_only https://github.com/j-f-oleary-bigdata/biglake-finegrained-lab
 ```
 
 ### 3.3. About the Terraform scripts
@@ -264,7 +489,7 @@ PROJECT_NBR=`gcloud projects describe $PROJECT_ID | grep projectNumber | cut -d'
 PROJECT_NAME=`gcloud projects describe ${PROJECT_ID} | grep name | cut -d':' -f2 | xargs`
 GCP_ACCOUNT_NAME=`gcloud auth list --filter=status:ACTIVE --format="value(account)"`
 LOCATION="us-central1"
-ORG_ID=`gcloud organizations list | grep DISPLAY_NAME | cut -d':' -f2 | xargs`
+ORG_ID=`gcloud organizations list | grep ".com" | cut -d ' ' -f 1 | xargs`
 YOUR_GCP_MULTI_REGION="US"
 USA_USERNAME="usa_user"
 AUS_USERNAME="aus_user"
@@ -363,88 +588,39 @@ Validate IAM users in the project, by navigating on Cloud Console to -
 1. Group: australia-sales	with email: australia-sales@YOUR_ORG_NAME with the user usa_user@ in it
 2. Group: us-sales	with email: us-sales@YOUR_ORG_NAME with the user aus_user@ in it	
 
-### 4.3. IAM roles
+### 4.3. GCS buckets
+1. gcs-bucket-YOUR_PROJECT_NUMBER
 
-a) User Principles:<br>
-1. usa_user: Viewer, Dataproc Editor
-2. aus_user: Viewer and Dataproc Editor
-3. mkt_user: Viewer and Dataproc Editor
-<br>
-
-b) Google Managed Compute Engine Default Service Account:<br>
-4. YOUR_PROJECT_NUMBER-compute@developer.gserviceaccount.com: Dataproc Worker
-<br>
-
-c) BigQuery Connection Default Service Account:<br>
-Covered below
-
-### 4.4. GCS buckets
-1. dataproc-bucket-aus-YOUR_PROJECT_NUMBER
-2. dataproc-bucket-mkt-YOUR_PROJECT_NUMBER
-3. dataproc-bucket-usa-YOUR_PROJECT_NUMBER
-4. dataproc-temp-YOUR_PROJECT_NUMBER
-
-### 4.5. GCS bucket permissions
-1. dataproc-bucket-aus-YOUR_PROJECT_NUMBER: Storage Admin to aus_user@
-2. dataproc-bucket-mkt-YOUR_PROJECT_NUMBER: Storage Admin to mkt_user@
-3. dataproc-bucket-usa-YOUR_PROJECT_NUMBER: Storage Admin to aus_user@
-4. dataproc-temp-YOUR_PROJECT_NUMBER: Storage Admin to all three users created
-
-### 4.6. Network resources
-Validate the creation of-
-1. VPC called default
-2. Subnet called default
-3. Firewall called subnet-firewall
-4. Cloud Router called nat-router
-5. Cloud NAT gateway called nat-config
-
-### 4.7. Cloud Dataproc Clusters
-
-From your default login (not as the 3 users created above), go to the cloud console and then the Dataproc UI & validate the creation of the following three Dataproc Clusters: 
-1. aus-dataproc-cluster
-2. usa-dataproc-cluster
-3. mkt-dataproc-cluster
-<br><br>
-![PICT3](./images/dataproc.png) 
-
-### 4.8. Notebook copy to each Dataproc cluster's Dataproc bucket
-Each of the three buckets (dataproc-bucket-aus/usa/mkt-YOUR_PROJECT_NUMBER) below should have the following in the exact directory structure:
-1. notebooks/jupyter/IceCream.ipynb
-
-### 4.9. Policy Tag Taxonomies
+### 4.5. Policy Tag Taxonomies
 Navigate to Dataplex->Policy Tag Taxonomies and you should see a policy tag called -
 1. Business-Critical-YOUR_PROJECT_NUMBER
 
-### 4.10. Policy Tag
+### 4.6. Policy Tag
 Click on the Policy Tag Taxonomy in Dataplex and you should see a Policy Tag called -
 1. Financial Data
 
-### 4.11. User association with Policy Tag
+### 4.7. User association with Policy Tag
 Each of the two users usa_user@ & aus_user@ are granted datacatalog.categoryFineGrainedReader tied to the Policy Tag created
 
-### 4.12. BigLake Connection
+### 4.8. BigLake Connection
 Navigate to BigQuery in the Cloud Console and you should see, under "External Connections" -
 1. An external connection called 'us-central1.biglake.gcs'
 
-### 4.13. BigQuery Dataset
+### 4.9. BigQuery Dataset
 In the BigQuery console, you should see a dataset called-
 1. biglake_dataset
 
-### 4.14. IAM role to BigQuery External Connection Default Service Account
-bqcx-YOUR_PROJECT_NUMBER@gcp-sa-bigquery-condel.iam.gserviceaccount.com: Storage Object Viewer	
-
-### 4.15. BigLake Table
-A BigLake table called IceCreamSales -
-1. That uses the Biglake connection 'us-central1.biglake.gcs'
-2. With CSV configuration 
-3. On CSV file at - gs://dataproc-bucket-aus-YOUR_PROJECT_NUMBER/data/IceCreamSales.csv
+### 4.10. BigLake Table
+A BigQuery table called IceCreamSales -
+2. Load from CSV file 
+3. CSV file at - gs://gcs-bucket-YOUR_PROJECT_NUMBER/data/IceCreamSales.csv
 4. With a set schema
 5. With column 'Discount' tied to the Policy Tag created -'Financial Data'
 6. With column 'Net_Revenue' tied to the Policy Tag created -'Financial Data'
 
 ![PICT3](./images/bigquery.png) 
 
-### 4.16. Row Access Policies
+### 4.11. Row Access Policies
 Create Row Access Policies, one for each user - aus_user@ and usa_user@ -
 1. Row Access Policy for the BigLake table IceCreamSales called 'Australia_filter' associated with the IAM group australia-sales@ on filter Country="Australia"
 2. Row Access Policy for the BigLake table IceCreamSales called 'US_filter' associated with the IAM group us-sales@ on filter Country="United States"
@@ -479,10 +655,7 @@ This section demonstrates how you can use BigLake to restrict access based on po
 **What to expect:**
 1. You will log on as the usa_user in an incognito browser
 2. First, you will launch Cloud Shell in the Cloud Console and create a personal authentication session that you will keep running for the duration of this lab section
-3. Next, you will go to the Dataproc UI on the Cloud Console, go to "WEB INTERFACES" and launch JupyterLab
-4. In JupyterLab, you will first launch a terminal session and authenticate yourself and get a Kerberos ticket by running 'kinit'
-5. Then you will run through the notebook
-
+3. TBD Run SQL Queries
 
 #### 5.2.1. Switch to the "usa_user" profile
 
@@ -602,63 +775,14 @@ This section demonstrates how you can use BigLake to restrict access based on po
 
 Follow steps 5.2.1 through 5.2.4 from above, abbreviated for your convenienc-<br>
 1. Login to an incognito browser as aus_user
-2. Use the command below to start a personal auth session in gcloud<br>
-```
-PROJECT_ID=`gcloud config list --format "value(core.project)" 2>/dev/null`
-USER_PREFIX="aus"
-gcloud dataproc clusters enable-personal-auth-session \
-    --project=${PROJECT_ID} \
-    --region=us-central1 \
-    --access-boundary=<(echo -n "{}") \
-   ${USER_PREFIX}-dataproc-cluster
-```
-3. Log into the aus-dataproc-cluster cluster, and go to "WEB INTERFACES" and click on JupyterLab
-4. In JupyterLab, open terminal and run kinit to authenticate and get a ticket
-```
-kinit -kt /etc/security/keytab/dataproc.service.keytab dataproc/$(hostname -f)
-```
-
-5. The major difference is that in cell 12, you should see data only for the 'Australia' as shown below:
-![PICT8](./images/jupyter7.png)
-<br>
-
+2. TBD SQL Queries
 <hr>
 
 ### 5.4. Principle of Least Privilege: Restricted column access for the marketing user (no access to financial data)
 This section demonstrates how you can use BigLake to restrict access based on policies. <br>
 1. Row Level Security: mkt_user@ can access data for any country in the IceCreamSales table (unlike aus_user@ and usa_user@ that could see data only for their country)
-2. Column Level Security: mkt_user@ can see all the columns except sensitive data columns Discount and Net_Revenue for which the user does not have permissions
-
-Follow steps 5.2.1 through 5.2.4 from above, abbreviated for your convenienc-<br>
-1. Login to an incognito browser as mkt_user
-2. Use the command below to start a personal auth session in gcloud<br>
-```
-PROJECT_ID=`gcloud config list --format "value(core.project)" 2>/dev/null`
-USER_PREFIX="mkt"
-gcloud dataproc clusters enable-personal-auth-session \
-    --project=${PROJECT_ID} \
-    --region=us-central1 \
-    --access-boundary=<(echo -n "{}") \
-   ${USER_PREFIX}-dataproc-cluster
-```
-3. Log into the mkt-dataproc-cluster cluster, and go to "WEB INTERFACES" and click on JupyterLab
-4. In JupyterLab, open terminal and run kinit to authenticate and get a ticket
-```
-kinit -kt /etc/security/keytab/dataproc.service.keytab dataproc/$(hostname -f)
-```
-
-5.  Cell 6 will throw an error, because mkt_user does not have access to all the columns -> specifically does not have access to Discount and Net_Revenue. <br>
-Edit cell 5 as follows and run the rest of the cells. They shoudl execute file.
-```
-rawDF = spark.read \
-  .format("bigquery") \
-  .load(f"{PROJECT_NAME}.biglake_dataset.IceCreamSales") \
-  .select("Month", "Country", "Gross_Revenue")
-```
-
-To run the rest of the notebook from cell 5, go to the menu and click on "Run"->"Run Selected Cell And All Below" 
-
-6. **What's different is-**
+2. TBD SQL Queries
+3. **What's different is-**
 mkt_user@
 - Cannot see discount and net_revenue
 - Can see data for both australia and united states
@@ -666,27 +790,6 @@ mkt_user@
 This concludes the validation of column level security with BigLake for the user, mkt_user@.
 
 <hr>
-
-
-### 6. To destroy the deployment
-
-Congratulations on completing the lab!<br>
-
-You can (a) shutdown the project altogether in GCP Cloud Console or (b) use Terraform to destroy. Use (b) at your own risk as its a little glitchy while (a) is guaranteed to stop the billing meter pronto.
-<br>
-Needs to run in cloud shell from ~/biglake-finegrained-lab/demo
-```
-cd ~/biglake-finegrained-lab/demo
-terraform destroy \
-  -var="project_id=${PROJECT_ID}" \
-  -var="project_nbr=${PROJECT_NBR}" \
-  -var="org_id=${ORG_ID}" \
-  -var="location=${LOCATION}" \
-  -var="usa_username=${USA_USERNAME}" \
-  -var="aus_username=${AUS_USERNAME}" \
-  -var="mkt_username=${MKT_USERNAME}" \
-  --auto-approve
- ```
 
 <hr>
 

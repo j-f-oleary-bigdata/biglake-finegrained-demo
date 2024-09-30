@@ -21,12 +21,8 @@
 locals {
 project_id                  = "${var.project_id}"
 location                    = "${var.location}"
-dataproc_temp_bucket        = "dataproc-temp-${var.project_nbr}"
-vpc_nm                      = "default"
-subnet_nm                   = "default"
-subnet_cidr                 = "10.0.0.0/16"
-dataset_name                = "biglake_dataset"
-bq_connection               = "biglake-gcs"
+gcs_bucket                  = "gcs-bucket-${var.project_nbr}"
+dataset_name                = "icecream_dataset"
 }
 
 provider "google" {
@@ -35,88 +31,7 @@ provider "google" {
 }
 
 /******************************************
-2. Creation of a VPC
-******************************************/
-resource "google_compute_network" "default_network" {
-  project                 = var.project_id
-  name                    = local.vpc_nm
-  description             = "Default network"
-  auto_create_subnetworks = false
-  mtu                     = 1460
-}
-
-/******************************************
-3. Creation of a subnet for dataproc cluster
-*******************************************/ 
-resource "google_compute_subnetwork" "subnet" {
-  project       = var.project_id
-  name          = local.subnet_nm  
-  ip_cidr_range = local.subnet_cidr
-  region        = var.location
-  network       = google_compute_network.default_network.id
-  private_ip_google_access = true
-
-  depends_on = [
-    google_compute_network.default_network
-  ]
-}
-
-/******************************************
-4. Creation of firewall rules
-*******************************************/
-resource "google_compute_firewall" "subnet_firewall_rule" {
-  project  = var.project_id
-  name     = "subnet-firewall"
-  network  = google_compute_network.default_network.id
-
-  allow {
-    protocol = "icmp"
-  }
-
-  allow {
-    protocol = "tcp"
-  }
-
-  allow {
-    protocol = "udp"
-  }
-  source_ranges = [local.subnet_cidr]
-
-  depends_on = [
-    google_compute_subnetwork.subnet
-  ]
-}
-
-/******************************************
-5. Creation of a router
-*******************************************/
-resource "google_compute_router" "nat-router" {
-  name    = "nat-router"
-  region  = "${var.location}"
-  network  = google_compute_network.default_network.id
-
-  depends_on = [
-    google_compute_firewall.subnet_firewall_rule
-  ]
-}
-
-/******************************************
-6. Creation of a NAT
-*******************************************/
-resource "google_compute_router_nat" "nat-config" {
-  name                               = "nat-config"
-  router                             = "${google_compute_router.nat-router.name}"
-  region                             = "${var.location}"
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
-
-  depends_on = [
-    google_compute_router.nat-router
-  ]
-}
-
-/******************************************
-7. Creation of IAM groups
+1. Creation of IAM groups
 *******************************************/
 
 resource "null_resource" "create_groups" {
@@ -147,13 +62,15 @@ resource "time_sleep" "wait_30_seconds" {
 }
 
 /******************************************
-8. Creation of IAM group memberships to the sales groups for the sales users
+2. Creation of IAM group memberships to the sales groups for the sales users
 *******************************************/
     
 resource "null_resource" "create_memberships" {
    for_each = {
       "us-sales" : format("%s",var.usa_username),
+      "us-sales" : format("%s",var.super_username),
       "australia-sales" : format("%s",var.aus_username)
+      "australia-sales" : format("%s",var.super_username)
     }
   provisioner "local-exec" {
     command = <<-EOT
@@ -173,7 +90,7 @@ resource "null_resource" "create_memberships" {
 }
 
 /******************************************
-9. Creation of IAM group membership to the sales groups for the marketing user
+3. Creation of IAM group membership to the sales groups for the marketing user
 *******************************************/
 resource "null_resource" "create_memberships_mkt" {
    for_each = {
@@ -198,7 +115,7 @@ resource "null_resource" "create_memberships_mkt" {
 }
 
 /******************************************
-10. Project Viewer permissions granting for all users
+4. Project Viewer permissions granting for all users
 *******************************************/
   
 resource "google_project_iam_binding" "project_viewer" {
@@ -211,33 +128,14 @@ resource "google_project_iam_binding" "project_viewer" {
     "user:${var.mkt_username}@${var.org_id}"
   ]
 }
-
+  
 /******************************************
-11. Dataproc editor permissions granting for all users
-*******************************************/
-resource "google_project_iam_binding" "dataproc_admin" {
-  project = var.project_id
-  role    = "roles/dataproc.editor"
-
-  members = [
-    "user:${var.usa_username}@${var.org_id}",
-    "user:${var.aus_username}@${var.org_id}",
-    "user:${var.mkt_username}@${var.org_id}"
-  ]
-}
-
-
-/******************************************
-12. Create Dataproc cluster buckets per user
+5. Create GCS bucket
 *******************************************/
 
-resource "google_storage_bucket" "create_buckets" {
-  for_each = {
-    "aus" : "",
-    "usa" : "",
-    "mkt" : "",
-  }
-  name                              = "dataproc-bucket-${each.key}-${var.project_nbr}"
+resource "google_storage_bucket" "create_gcs_bucket" {
+
+  name                              = local.gcs_bucket
   location                          = local.location
   uniform_bucket_level_access       = true
   force_destroy                     = true
@@ -245,203 +143,20 @@ resource "google_storage_bucket" "create_buckets" {
 }
   
 /******************************************
-13. Create Dataproc common temp bucket
-*******************************************/
-
-resource "google_storage_bucket" "create_temp_bucket" {
-
-  name                              = local.dataproc_temp_bucket
-  location                          = local.location
-  uniform_bucket_level_access       = true
-  force_destroy                     = true
-
-}
-  
-/******************************************
-14. IceCreamSales.csv dataset upload to each user bucket 
+6. IceCreamSales.csv dataset upload to each user bucket 
 *******************************************/
 
 resource "google_storage_bucket_object" "gcs_objects" {
-  for_each = {
-    "aus" : "",
-    "usa" : "",
-    "mkt" : "",
-  }
   name        = "data/IceCreamSales.csv"
   source      = "./resources/IceCreamSales.csv"
-  bucket      = "dataproc-bucket-${each.key}-${var.project_nbr}"
-  depends_on = [google_storage_bucket.create_buckets]
+  bucket      = "${local.gcs_bucket}"
+  depends_on = [google_storage_bucket.create_gcs_bucket]
 }
   
-/******************************************
-15. Storage admin permissions granting to the Dataproc (common) temp bucket
-*******************************************/
 
-
-resource "google_storage_bucket_iam_binding" "temp_dataproc_bucket_policy" {
-  bucket = local.dataproc_temp_bucket
-  role = "roles/storage.admin"
-  members = [
-          "user:${var.aus_username}@${var.org_id}",
-          "user:${var.usa_username}@${var.org_id}",
-          "user:${var.mkt_username}@${var.org_id}"
-  ]
-
-  depends_on = [google_storage_bucket.create_temp_bucket]
-}
 
 /******************************************
-16. Storage admin permissions granting to each user to ONLY their bucket
-*******************************************/
-
-resource "google_storage_bucket_iam_binding" "aus_dataproc_bucket_policy" {
-  bucket = "dataproc-bucket-aus-${var.project_nbr}"
-  role = "roles/storage.admin"
-  members = ["user:${var.aus_username}@${var.org_id}"]
-
-  depends_on = [google_storage_bucket.create_buckets]
-}
-
-
-resource "google_storage_bucket_iam_binding" "usa_dataproc_bucket_policy" {
-  bucket = "dataproc-bucket-usa-${var.project_nbr}"
-  role = "roles/storage.admin"
-  members = ["user:${var.usa_username}@${var.org_id}"]
-
-  depends_on = [google_storage_bucket.create_buckets]
-}
-
-
-resource "google_storage_bucket_iam_binding" "mkt_dataproc_bucket_policy" {
-  bucket = "dataproc-bucket-mkt-${var.project_nbr}"
-  role = "roles/storage.admin"
-  members = ["user:${var.mkt_username}@${var.org_id}"]
-
-  depends_on = [google_storage_bucket.create_buckets]
-}
-
-/******************************************
-17. Dataproc Worker role granting to the compute engine default service account
-*******************************************/
-    
-resource "google_project_iam_member" "service_account_worker_role" {
-  project  = var.project_id
-  role     = "roles/dataproc.worker"
-  member   = "serviceAccount:${var.project_nbr}-compute@developer.gserviceaccount.com"
-
-}
-
-/******************************************
-18. Dataproc cluster creation per user
-*******************************************/
-
-resource "google_dataproc_cluster" "dataproc_clusters" {
-  for_each = {
-    "${var.aus_username}" : "aus",
-    "${var.usa_username}" : "usa",
-    "${var.mkt_username}" : "mkt",
-  }
-  name     = format("%s-dataproc-cluster", each.value)
-  project  = var.project_id
-  region   = var.location
-  cluster_config {
-    staging_bucket = "dataproc-bucket-${each.value}-${var.project_nbr}"
-    temp_bucket = local.dataproc_temp_bucket
-    master_config {
-      num_instances = 1
-      machine_type  = "n1-standard-8"
-      disk_config {
-        #boot_disk_type    = "pd-ssd"
-        boot_disk_size_gb = 1000
-      }
-    }
-    
-    preemptible_worker_config {
-      num_instances = 0
-    }
-    endpoint_config {
-        enable_http_port_access = "true"
-    }
-    # Override or set some custom properties
-    software_config {
-      image_version = "2.0-debian10"
-      override_properties = {
-        "dataproc:dataproc.personal-auth.user" = "${each.key}@${var.org_id}",
-         "dataproc:dataproc.allow.zero.workers" = "true"
-      }
-      optional_components = [ "JUPYTER", "ZEPPELIN" ]
-        
-      
-    }
-    initialization_action {
-      script      = "gs://goog-dataproc-initialization-actions-${var.location}/connectors/connectors.sh"
-      timeout_sec = 300
-    }
-    initialization_action {
-      script      = "gs://goog-dataproc-initialization-actions-${var.location}/python/pip-install.sh"
-      timeout_sec = 300
-    }
-
-    gce_cluster_config {
-      zone        = "${var.location}-a"
-      subnetwork  = google_compute_subnetwork.subnet.id
-      #service_account_scopes = ["cloud-platform"]
-      service_account_scopes = ["https://www.googleapis.com/auth/iam"]
-      internal_ip_only = true
-      shielded_instance_config {
-        enable_secure_boot          = true
-        enable_vtpm                 = true
-        enable_integrity_monitoring = true
-        }
-     metadata = {
-        "spark-bigquery-connector-version" : "0.26.0",
-        "PIP_PACKAGES" : "pandas prophet plotly"
-        }   
-    }
-  }
-  depends_on = [
-              google_storage_bucket.create_buckets,
-              google_compute_router_nat.nat-config,
-              google_project_iam_member.service_account_worker_role
-  ]  
-}
-
-/******************************************
-# 19. Uploading of IceCream notebook to each user's GCS bucket where Dataproc expects it
-*******************************************/
-
-resource "google_storage_bucket_object" "gcs_objects_aus_dataproc" {
-  for_each = {
-    "./resources/IceCream.ipynb" : "notebooks/jupyter/IceCream.ipynb"
-  }
-  name        = each.value
-  source      = each.key
-  bucket      = "dataproc-bucket-aus-${var.project_nbr}"
-  depends_on = [google_dataproc_cluster.dataproc_clusters]
-}
-
-resource "google_storage_bucket_object" "gcs_objects_usa_dataproc" {
-  for_each = {
-    "./resources/IceCream.ipynb" : "notebooks/jupyter/IceCream.ipynb"
-  }
-  name        = each.value
-  source      = each.key
-  bucket      = "dataproc-bucket-usa-${var.project_nbr}"
-  depends_on = [google_dataproc_cluster.dataproc_clusters]
-}
-
-resource "google_storage_bucket_object" "gcs_objects_mkt_dataproc" {
-  for_each = {
-    "./resources/IceCream.ipynb" : "notebooks/jupyter/IceCream.ipynb"
-  }
-  name        = each.value
-  source      = each.key
-  bucket      = "dataproc-bucket-mkt-${var.project_nbr}"
-  depends_on = [google_dataproc_cluster.dataproc_clusters]
-}
-
-/******************************************
-# 20. Creation of Data Catalog Taxonomy with policy type of "FINE_GRAINED_ACCESS_CONTROL"
+# 7. Creation of Data Catalog Taxonomy with policy type of "FINE_GRAINED_ACCESS_CONTROL"
 *******************************************/
 
 resource "google_data_catalog_taxonomy" "business_critical_taxonomy" {
@@ -454,7 +169,7 @@ resource "google_data_catalog_taxonomy" "business_critical_taxonomy" {
 }
   
 /******************************************
-# 21. Creation of Data Catalog policy tag tied to the taxonomy
+# 8. Creation of Data Catalog policy tag tied to the taxonomy
 *******************************************/
 
 resource "google_data_catalog_policy_tag" "financial_data_policy_tag" {
@@ -468,13 +183,13 @@ resource "google_data_catalog_policy_tag" "financial_data_policy_tag" {
 }
 
 /******************************************
-# 22. Granting of fine grained reader permisions to us_user@ and aus_user@
+# 9. Granting of fine grained reader permisions to us_user@ and aus_user@
 *******************************************/
 resource "google_data_catalog_policy_tag_iam_member" "member" {
   for_each = {
     "user:${var.aus_username}@${var.org_id}" : "",
-    "user:${var.usa_username}@${var.org_id}" : ""
-
+    "user:${var.usa_username}@${var.org_id}" : "",
+    "user:${var.super_username}@${var.org_id}" : ""
   }
   policy_tag = google_data_catalog_policy_tag.financial_data_policy_tag.name
   role       = "roles/datacatalog.categoryFineGrainedReader"
@@ -485,7 +200,7 @@ resource "google_data_catalog_policy_tag_iam_member" "member" {
 }
 
 /******************************************
-# 23. Creation of BigQuery dataset
+# 10. Creation of BigQuery dataset
 *******************************************/
 
 resource "google_bigquery_dataset" "bigquery_dataset" {
@@ -498,31 +213,11 @@ resource "google_bigquery_dataset" "bigquery_dataset" {
   depends_on = [google_storage_bucket_object.gcs_objects]
 }
 
-/******************************************
-# 24. Creation of BigQuery connection
-*******************************************/
-
- resource "google_bigquery_connection" "connection" {
-    connection_id = local.bq_connection
-    project = var.project_id
-    location = var.location
-    cloud_resource {}
-    depends_on = [google_bigquery_dataset.bigquery_dataset]
-} 
 
 /******************************************
-# 25. Granting of Storage Object Viewer to the default Google Managed Service Account asssociated with the BigQuery connection created
+# 11. Creation of BigQuery table
 *******************************************/
-resource "google_project_iam_member" "connectionPermissionGrant" {
-    project = var.project_id
-    role = "roles/storage.objectViewer"
-    member = format("serviceAccount:%s", google_bigquery_connection.connection.cloud_resource[0].service_account_id)
-}    
-
-/******************************************
-# 26. Creation of BigLake table
-*******************************************/
-resource "google_bigquery_table" "biglakeTable" {
+resource "google_bigquery_table" "bqTable" {
     ## If you are using schema autodetect, uncomment the following to
     ## set up a dependency on the prior delay.
     # depends_on = [time_sleep.wait_7_min]
@@ -563,34 +258,45 @@ resource "google_bigquery_table" "biglakeTable" {
             }
     ]
     EOF
-    external_data_configuration {
-        ## Autodetect determines whether schema autodetect is active or inactive.
-        autodetect = false
-        source_format = "CSV"
-        connection_id = google_bigquery_connection.connection.name
-
-        csv_options {
-            quote                 = "\""
-            field_delimiter       = ","
-            allow_quoted_newlines = "false"
-            allow_jagged_rows     = "false"
-            skip_leading_rows     = 1
-        }
-
-        source_uris = [
-            "gs://dataproc-bucket-aus-${var.project_nbr}/data/IceCreamSales.csv",
-        ]
-    }
     deletion_protection = false
     depends_on = [
-              google_bigquery_connection.connection,
               google_storage_bucket_object.gcs_objects,
-              google_data_catalog_policy_tag_iam_member.member
+              google_data_catalog_policy_tag_iam_member.member,
+              google_bigquery_dataset.bigquery_dataset
               ]
 }
-  
+
 /******************************************
-# 27. Creation of Row Access Policy for Australia
+# 12. Load BigQuery table
+*******************************************/
+resource "google_bigquery_job" "job" {
+  job_id     = "job_load"
+
+  labels = {
+    "my_job" ="load"
+  }
+  location                    = var.location
+
+  load {
+    source_uris = [
+      "gs://${local.gcs_bucket}/data/IceCreamSales.csv",
+    ]
+
+    destination_table {
+      project_id = var.project_id
+      dataset_id = google_bigquery_table.bqTable.dataset_id
+      table_id   = google_bigquery_table.bqTable.table_id
+    }
+
+    skip_leading_rows = 1
+    write_disposition = "WRITE_TRUNCATE"
+  }
+
+  depends_on = [google_bigquery_table.bqTable]
+}
+
+/******************************************
+# 13. Creation of Row Access Policy for Australia
 *******************************************/
 resource "null_resource" "create_aus_filter" {
   provisioner "local-exec" {
@@ -609,11 +315,11 @@ resource "null_resource" "create_aus_filter" {
     EOT
   }
 
-  depends_on = [google_bigquery_table.biglakeTable]
+  depends_on = [google_bigquery_table.bqTable]
 }
 
 /******************************************
-# 28. Creation of Row Access Policy for United States
+# 14. Creation of Row Access Policy for United States
 *******************************************/
 resource "null_resource" "create_us_filter" {
   provisioner "local-exec" {

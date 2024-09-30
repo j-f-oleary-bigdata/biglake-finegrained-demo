@@ -51,7 +51,10 @@ variable "mkt_username" {
   default     = "mkt_user"
 }
 
-
+variable "super_username" {
+  type        = string
+  default     = "admin"
+}
 
 
 
